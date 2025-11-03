@@ -24,7 +24,7 @@ jobs:
       - name: Upload artifacts
         id: upload_artifacts
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: mimir-qa-${{ github.run_number }}
           path: './build/libs/*.jar'
@@ -130,7 +130,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ Mabl tests failed for build ${{ github.run_number }}\nCommit message: *${{ github.event.head_commit.message }}*\nPlease check the <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow output> for details"
+                    "text": "❌ Mabl tests failed for build ${{ github.run_number }}\nPlease check the <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow output> for details"
                   }
                 }
               ]
