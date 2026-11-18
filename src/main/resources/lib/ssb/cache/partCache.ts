@@ -1,4 +1,5 @@
 import '/lib/ssb/polyfills/nashorn'
+import { type Request } from '@enonic-types/core'
 import { Content } from '/lib/xp/content'
 import { newCache, Cache } from '/lib/cache'
 import { cacheLog } from '/lib/ssb/utils/serverLog'
@@ -12,7 +13,7 @@ const draftPartCache: Cache = newCache({
   size: 1000,
 })
 
-export function fromPartCache<T>(req: XP.Request, key: string, fallback: () => T): T {
+export function fromPartCache<T>(req: Request, key: string, fallback: () => T): T {
   const partCache: Cache = req.branch === 'master' ? masterPartCache : draftPartCache
   const _key = key + `-${req.mode}`
   return partCache.get(_key, () => {
@@ -52,12 +53,24 @@ export function clearPartCache(content: Content, branch: string): void {
     partCache.removePattern(`${content._id}-webcruiterAdvertisementList.*`)
     cacheLog(`try to clear ${content._id}-simpleStatbank from part cache (${branch})`)
     partCache.removePattern(`${content._id}-simpleStatbank.*`)
+    cacheLog(`try to clear ${content._id}-statisticHeader from part cache (${branch})`)
+    partCache.removePattern(`${content._id}-statisticHeader.*`)
+    cacheLog(`try to clear ${content._id}-statisticContact from part cache (${branch})`)
+    partCache.removePattern(`${content._id}-statisticContact.*`)
   }
 
   if (content.type === `${app.name}:article`) {
     cacheLog(`try to clear ${content._id}-relatedFactPage from part cache (${branch})`)
     partCache.removePattern(`${content._id}-relatedFactPage.*`)
   }
+}
+
+export function clearStatisticPartsCache(contentId: string, branch: string): void {
+  const partCache: Cache = branch === 'master' ? masterPartCache : draftPartCache
+  cacheLog(`try to clear ${contentId}-statisticHeader from part cache (${branch})`)
+  partCache.removePattern(`${contentId}-statisticHeader.*`)
+  cacheLog(`try to clear ${contentId}-statisticContact from part cache (${branch})`)
+  partCache.removePattern(`${contentId}-statisticContact.*`)
 }
 
 export function completelyClearPartCache(branch: string): void {

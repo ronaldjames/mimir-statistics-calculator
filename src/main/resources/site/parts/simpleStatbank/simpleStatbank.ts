@@ -1,3 +1,4 @@
+import { type Request, type Response } from '@enonic-types/core'
 import { getContent, getComponent } from '/lib/xp/portal'
 import { get as getContentByKey, type Content } from '/lib/xp/content'
 import { localize } from '/lib/xp/i18n'
@@ -9,7 +10,7 @@ import { fromPartCache } from '/lib/ssb/cache/partCache'
 import { type SimpleStatbankProps, type SimpleStatbankResult } from '/lib/types/partTypes/simpleStatbank'
 import { type SimpleStatbank } from '/site/content-types'
 
-export function get(req: XP.Request): XP.Response {
+export function get(req: Request): Response {
   try {
     const config = getComponent<XP.PartComponent.SimpleStatbank>()?.config
     if (!config) throw Error('No part found')
@@ -17,15 +18,15 @@ export function get(req: XP.Request): XP.Response {
     const simpleStatbankId: string | undefined = config?.simpleStatbank
     return renderPart(req, simpleStatbankId)
   } catch (e) {
-    return renderError(req, 'Error in part', e)
+    return renderError(req, 'Error in part', e as Error)
   }
 }
 
-export function preview(req: XP.Request, simpleStatbankId: string | undefined): XP.Response {
+export function preview(req: Request, simpleStatbankId: string | undefined): Response {
   try {
     return renderPart(req, simpleStatbankId)
   } catch (e) {
-    return renderError(req, 'Error in part', e)
+    return renderError(req, 'Error in part', e as Error)
   }
 }
 
@@ -33,7 +34,7 @@ function missingConfig(message: string) {
   return `<div class="simple-statbank"><div class='content'>${message}</div></div>`
 }
 
-function renderPart(req: XP.Request, simpleStatbankId: string | undefined): XP.Response {
+function renderPart(req: Request, simpleStatbankId: string | undefined): Response {
   const page = getContent<Content<SimpleStatbank>>()
   if (!page) throw Error('No page found')
 
@@ -84,14 +85,14 @@ function getImageUrl(icon?: string) {
 }
 
 function getImageAltText(icon?: string) {
-  return icon ? getImageAlt(icon) : 'No description found'
+  return getImageAlt(icon) ?? 'No description found'
 }
 
 function renderSimpleStatbankComponent(
-  req: XP.Request,
+  req: Request,
   simpleStatbankData: Content<SimpleStatbank>,
   statbankApiData: SimpleStatbankResult | undefined
-): XP.Response {
+): Response {
   const props: SimpleStatbankProps = {
     icon: getImageUrl(simpleStatbankData.data.icon),
     altText: getImageAltText(simpleStatbankData.data.icon),

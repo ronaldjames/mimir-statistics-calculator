@@ -1,10 +1,12 @@
-export function get(req: XP.Request): XP.Response {
-  const value = req.params.value
+import { type Request, type Response } from '@enonic-types/core'
+
+export function get(req: Request): Response {
+  const value = req.params?.value?.toString()
 
   if (!value || !['all', 'necessary', 'unidentified'].includes(value)) {
     return {
       status: 400,
-      body: 'Invalid cookie-consent value',
+      body: 'Invalid ssbno-consent value',
     }
   }
 
@@ -13,7 +15,7 @@ export function get(req: XP.Request): XP.Response {
     body: JSON.stringify({ success: true, value }),
     contentType: 'application/json',
     cookies: {
-      'cookie-consent': {
+      'ssbno-consent': {
         value,
         path: '/',
         maxAge: 7776000, // 90 dager

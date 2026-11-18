@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
 import React, { useEffect, useRef } from 'react'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
@@ -6,17 +5,15 @@ import PropTypes from 'prop-types'
 import { Link, Text, Tabs, Divider } from '@statisticsnorway/ssb-component-library'
 import { Col, Row } from 'react-bootstrap'
 import { useMediaQuery } from 'react-responsive'
+import 'highcharts/modules/accessibility'
+import 'highcharts/modules/exporting'
+import 'highcharts/modules/offline-exporting'
+import 'highcharts/modules/export-data'
+import 'highcharts/modules/map'
 
 import { exportHighchartsToExcel } from '/lib/ssb/utils/tableExportUtils'
-import accessibilityLang from './../../../assets/js/highchart-lang.json'
-
-if (typeof Highcharts === 'object') {
-  require('highcharts/modules/accessibility')(Highcharts)
-  require('highcharts/modules/exporting')(Highcharts)
-  require('highcharts/modules/offline-exporting')(Highcharts)
-  require('highcharts/modules/export-data')(Highcharts)
-  require('highcharts/modules/map')(Highcharts)
-}
+import { formatHighchartsTable } from '/lib/ssb/utils/highchartsTableUtils'
+import accessibilityLang from '/lib/ssb/parts/highcharts/highchart-lang.json'
 
 function generateColors(color, thresholdValues) {
   const obj = {}
@@ -82,7 +79,7 @@ function generateSeries(tableData, mapDataSecondColumn, color, seriesTitle, phra
     return {
       capitalName: mapDataSecondColumn ? String(value).toUpperCase() : String(name).toUpperCase(),
       color: definedColors?.[name],
-      name,
+      name: mapDataSecondColumn ? value : name,
       value: mapDataSecondColumn ? name : value,
     }
   })
@@ -115,22 +112,16 @@ function generateSeries(tableData, mapDataSecondColumn, color, seriesTitle, phra
           code: value,
           value: '', // value is required even though this series only does coloring areas
         })),
+        tooltip: {
+          pointFormat: key,
+        },
       }
     }),
   ]
   return series
 }
 
-const getTooltipFormatter = (language, seriesTitle) =>
-  function () {
-    if (this.point.value || this.point.value === 0) {
-      const value = language !== 'en' ? String(this.point.value).replace('.', ',') : this.point.value
-      return `${this.point.name}</br>${seriesTitle ? seriesTitle + ': ' : ''}${value}`
-    }
-    return `${this.point.name}</br>${this.series.name}`
-  }
-
-const chart = (desktop, heightAspectRatio, mapFile, language, highmapId) => {
+const chart = (desktop, heightAspectRatio, mapFile, language) => {
   return {
     height: desktop && heightAspectRatio && `${heightAspectRatio}%`,
     style: {
@@ -141,18 +132,19 @@ const chart = (desktop, heightAspectRatio, mapFile, language, highmapId) => {
     },
     map: mapFile,
     events: {
-      render: function () {
-        // Workaround to get correct decimalpoint in table in Norwegian
-        const table = document.querySelector(`#figure-${highmapId} .highcharts-data-table table`);
-        if (table && language !== "en") {
-          for(const td of table.querySelectorAll('td')) {
-            if(Number.parseFloat(td.textContent)){
-              td.textContent = td.textContent.replace('.', ','); // replace decimalpoint in Norwegian
+      // Workaround to get correct number formatting in table
+      exportData: function (chart) {
+        const rows = chart.dataRows
+        for (const row of rows) {
+          // Escaping first vaule not to format category ie. year
+          for (const [i, cell] of row.entries()) {
+            if (i > 0 && typeof cell === 'number') {
+              row[i] = cell.toLocaleString(language === 'en' ? 'en-EN' : 'no-NO').replace('NaN', '')
             }
-          };
+          }
         }
-      }
-    }
+      },
+    },
   }
 }
 
@@ -169,9 +161,10 @@ const legend = (desktop, legendTitle, legendAlign, numberDecimals) => {
   return {
     title: {
       text: legendTitle,
-      style: {
-        color: Highcharts.theme?.textColor || 'black',
-      },
+    },
+    itemStyle: {
+      fontWeight: 'bold',
+      color: Highcharts.theme?.textColor || 'black',
     },
     align: legendAlign === 'topLeft' || legendAlign === 'bottomLeft' ? 'left' : 'right',
     verticalAlign: legendAlign === 'topLeft' || legendAlign === 'topRight' ? 'top' : 'bottom',
@@ -236,26 +229,7 @@ const exporting = (sourceList, phrases, title) => {
     },
     enabled: true,
     menuItemDefinitions: {
-      printChart: {
-        text: phrases['highcharts.printChart'],
-      },
-      downloadPNG: {
-        text: phrases['highcharts.downloadPNG'],
-      },
-      downloadJPEG: {
-        text: phrases['highcharts.downloadJPEG'],
-      },
-      downloadPDF: {
-        text: phrases['highcharts.downloadPDF'],
-      },
-      downloadSVG: {
-        text: phrases['highcharts.downloadSVG'],
-      },
-      downloadCSV: {
-        text: phrases['highcharts.downloadCSV'],
-      },
       downloadXLS: {
-        text: phrases['highcharts.downloadXLS'],
         onclick: downloadAsXLSX(title),
       },
     },
@@ -298,7 +272,8 @@ function Highmap(props) {
     footnoteText,
     highmapId,
     geographicalCategory,
-    seriesTitle
+    seriesTitle,
+    timePeriod,
   } = props
 
   const highmapsWrapperRef = useRef(null)
@@ -306,10 +281,11 @@ function Highmap(props) {
   useEffect(() => {
     const highmapWrapperElement = highmapsWrapperRef.current?.children
     const [highmapElement, tableWrapperElement] = highmapWrapperElement ?? []
-    const tableElement = tableWrapperElement?.children[0]
+    const tableElement = formatHighchartsTable(tableWrapperElement, timePeriod)
 
-    tableWrapperElement?.classList.add('ssb-table-wrapper', 'd-none')
-    tableElement?.classList.add('statistics', 'ssb-table')
+    tableWrapperElement?.classList.add('d-none')
+    tableWrapperElement?.setAttribute('aria-hidden', 'true')
+
     tableElement?.setAttribute('tabindex', '0') // Scrollable region must have keyboard access
 
     // Add Tab component accessibility tags for Highmaps and table
@@ -324,16 +300,19 @@ function Highmap(props) {
     minWidth: 992,
   })
 
+  const lang = language !== 'en' ? accessibilityLang.lang : { locale: 'en-GB' }
+  const tooltipPrefix = seriesTitle ? `${seriesTitle}: ` : ''
+
   const mapOptions = {
-    chart: chart(desktop, heightAspectRatio, mapFile, language, highmapId),
+    chart: chart(desktop, heightAspectRatio, mapFile, language),
     accessibility: {
       enabled: true,
       description,
     },
-    ...accessibilityLang,
     lang: {
+      ...lang,
       exportData: {
-        categoryHeader: geographicalCategory ?? phrases['highmaps.geographicalCategory']
+        categoryHeader: geographicalCategory ?? phrases['highmaps.geographicalCategory'],
       },
     },
     title: {
@@ -353,7 +332,8 @@ function Highmap(props) {
     series: generateSeries(tableData, mapDataSecondColumn, color, seriesTitle, phrases),
     tooltip: {
       enabled: true,
-      formatter: getTooltipFormatter(language, seriesTitle),
+      headerFormat: '{point.name}</br>',
+      pointFormat: tooltipPrefix + '{point.value}',
       valueDecimals: numberDecimals,
     },
     credits: {
@@ -362,7 +342,9 @@ function Highmap(props) {
     exporting: exporting(sourceList, phrases, title),
     csv: {
       itemDelimiter: ';',
-    }
+      decimalPoint: language === 'en' ? '.' : ',',
+    },
+    palette: {colorScheme: 'light'},
   }
 
   const handleTabOnClick = (item) => {
@@ -375,6 +357,11 @@ function Highmap(props) {
     tableWrapperElement?.setAttribute('aria-hidden', !showTable)
     highmapElement?.classList.toggle('d-none', showTable)
     highmapElement?.setAttribute('aria-hidden', showTable)
+
+    if (showTable) {
+      // Re-apply table formatting after toggle, since Highcharts may recreate the table DOM.
+      formatHighchartsTable(tableWrapperElement, timePeriod)
+    }
   }
 
   function renderShowAsFigureOrTableTab() {
@@ -410,6 +397,7 @@ function Highmap(props) {
         <figure id={`figure-${highmapId}`} className='highcharts-figure mb-0 hide-title'>
           {mapOptions.title?.text && <figcaption className='figure-title'>{mapOptions.title.text}</figcaption>}
           {mapOptions.subtitle?.text && <p className='figure-subtitle'>{mapOptions.subtitle.text}</p>}
+          {timePeriod && <p className='figure-time-period'>{timePeriod}</p>}
           {renderShowAsFigureOrTableTab()}
           <div ref={highmapsWrapperRef}>
             <HighchartsReact highcharts={Highcharts} constructorType='mapChart' options={mapOptions} />
@@ -417,7 +405,7 @@ function Highmap(props) {
         </figure>
         {footnoteText?.map((footnote) => (
           <Col className='footnote col-12' key={`footnote-${footnote}`}>
-            {footnote && <Text>{footnote}</Text>}
+            {footnote && <Text small='true'>{footnote}</Text>}
           </Col>
         ))}
         {sourceList?.map(renderHighchartsSource)}
@@ -447,7 +435,8 @@ Highmap.propTypes = {
   phrases: PropTypes.object,
   language: PropTypes.string,
   highmapId: PropTypes.string,
-  geographicalCategory: PropTypes.String
+  geographicalCategory: PropTypes.string,
+  timePeriod: PropTypes.string,
 }
 
 export default (props) => <Highmap {...props} />

@@ -1,24 +1,139 @@
+import { type Request } from '@enonic-types/core'
+import { type components } from '@statisticsnorway/statreg-api-types'
+import { localize } from '/lib/xp/i18n'
+import { type Content, query } from '/lib/xp/content'
 import {
   type ContentLight,
   type Release as ReleaseVariant,
+  getStatisticsContentByShortname,
   getUpcompingStatisticVariantsFromRepo,
 } from '/lib/ssb/repo/statisticVariant'
 import { Contact, ReleasesInListing } from '/lib/ssb/dashboard/statreg/types'
-import { getMainSubjects } from '/lib/ssb/utils/subjectUtils'
+import { getAllMainSubjectByContent, getMainSubjects, getSubSubjects } from '/lib/ssb/utils/subjectUtils'
 import { calculatePeriod } from '/lib/ssb/utils/variantUtils'
 import { addDays, isWithinInterval } from '/lib/vendor/dateFns'
-import { formatDate, getTimeZoneIso } from '/lib/ssb/utils/dateUtils'
 import * as util from '/lib/util'
 import { getContactsFromRepo } from '/lib/ssb/statreg/contacts'
 import { type SubjectItem } from '/lib/types/subject'
+import { isEnabled } from '/lib/featureToggle'
+import { fetchReleasesFromStatregApi } from '/lib/ssb/statreg/statistics'
+import { notNullOrUndefined } from '/lib/ssb/utils/coreUtils'
+import { contentArrayToRecord } from '/lib/ssb/utils/arrayUtils'
+import { OmStatistikken, type Statistics } from '/site/content-types'
+import { formatPubDateStatistic } from './news-helpers'
 
-const dummyReq: Partial<XP.Request> = {
+const dummyReq: Partial<Request> = {
   branch: 'master',
 }
 
+function getByIds<Data extends object>(ids: Array<string>, language: 'en' | 'nb'): Record<string, Content<Data>> {
+  return contentArrayToRecord(
+    query<Content<Data>>({
+      count: ids.length,
+      filters: {
+        ids: {
+          values: ids,
+        },
+        hasValue: {
+          field: 'language',
+          values: language === 'en' ? ['en'] : ['nb', 'nn'],
+        },
+      },
+    }).hits
+  )
+}
+
 export function getRssReleasesStatkal(): RssRelease[] {
+  const useNewStatreg = isEnabled('new-statreg-as-source', false, 'ssb')
+  if (useNewStatreg) {
+    return getRssFromApi('no').concat(getRssFromApi('en'))
+  } else {
+    return getRssFromRepo()
+  }
+}
+
+function getRssFromApi(lang: string = 'nb'): RssRelease[] {
+  const now = new Date()
+  const dateIn90Days = new Date(new Date(now).setDate(now.getDate() + 90))
+
+  const futureReleases = fetchReleasesFromStatregApi({
+    start: 0,
+    count: 1000,
+    publish_time_after: now.toISOString(),
+    publish_time_before: dateIn90Days.toISOString(),
+  })
+
+  if (!futureReleases || 'error' in futureReleases) {
+    log.error('Could not get Releases from Statreg!' + JSON.stringify(futureReleases?.error, null, 2))
+    return []
+  } else {
+    const allMainSubjects: SubjectItem[] = getMainSubjects(dummyReq as Request)
+    const allSubSubjects: SubjectItem[] = getSubSubjects(dummyReq as Request)
+
+    const statisticsWithReleases: string[] = []
+    futureReleases.forEach((r) => {
+      r.statistic?.shortname && statisticsWithReleases.push(r.statistic?.shortname)
+    })
+
+    const statisticsContents = getStatisticsContentByShortname(statisticsWithReleases, lang)
+    const aboutTheStatisticsKeys: Array<string> = statisticsContents.hits
+      .map((stat) => stat.data.aboutTheStatistics)
+      .filter(notNullOrUndefined)
+
+    const aboutTheStatistics: Record<string, Content<OmStatistikken>> = getByIds<OmStatistikken>(
+      aboutTheStatisticsKeys,
+      'nb'
+    )
+
+    const rssReleases: RssRelease[] = []
+    futureReleases?.forEach((release) => {
+      const content = statisticsContents.hits.find(
+        (stat) => stat.data.shortname === release.statistic?.shortname
+      ) as Content<Statistics>
+      if (!content) {
+        log.error('Content not found with release ID: ' + release.id)
+        return
+      }
+      const aboutTheStatisticsContent: Content<OmStatistikken> | undefined = content?.data.aboutTheStatistics
+        ? aboutTheStatistics[content?.data.aboutTheStatistics]
+        : undefined
+      const myMainSubject = getAllMainSubjectByContent(content, allMainSubjects, allSubSubjects)
+      const baseUrl: string = app.config && app.config['ssb.baseUrl'] ? app.config['ssb.baseUrl'] : 'https://www.ssb.no'
+      const statisticUrl = `${baseUrl}/${content._path.split('/').slice(2).join('/')}`
+      const shortname = release.statistic?.shortname || ''
+      const periode = localize({
+        key: 'period.generic',
+        locale: content.language || 'nb',
+        values: [
+          content.language === 'en' ? release.measuring_period?.title_en || '' : release.measuring_period?.title || '',
+        ],
+      })
+
+      rssReleases.push({
+        guid: release.id?.toString() || '0',
+        title: content?.displayName || '',
+        link: statisticUrl,
+        description:
+          aboutTheStatisticsContent?.data.ingress ??
+          content?.x?.['com-enonic-app-metafields']?.['meta-data'].seoDescription,
+        category: myMainSubject[0]?.title || '',
+        subject: myMainSubject[0]?.name || '',
+        language: content.language === 'en' ? 'en' : 'no',
+        pubDate: release?.publish_time || '',
+        periode,
+        shortname,
+        contacts: [],
+      })
+    })
+    return rssReleases
+  }
+}
+
+function getRssFromRepo() {
+  const allMainSubjects: SubjectItem[] = getMainSubjects(dummyReq as Request)
+
   const statisticVariants: ContentLight<ReleaseVariant>[] = getUpcompingStatisticVariantsFromRepo()
-  const allMainSubjects: SubjectItem[] = getMainSubjects(dummyReq as XP.Request)
+
   const upcomingVariants: StatkalVariant[] = getUpcomingVariants(statisticVariants, allMainSubjects)
   const upcomingReleases: StatkalRelease[] = getUpcomingReleases(statisticVariants)
   return getRssReleases(upcomingVariants, upcomingReleases)
@@ -90,14 +205,12 @@ function getUpcomingReleases(statisticVariants: ContentLight<ReleaseVariant>[]):
 function getRssReleases(variants: StatkalVariant[], releases: StatkalRelease[]): RssRelease[] {
   const rssReleases: RssRelease[] = []
   const contacts: Contact[] = getContactsFromRepo()
-  const serverOffsetInMilliSeconds: number = parseInt(app.config?.['serverOffsetInMs']) || 0
-  const timeZoneIso: string = getTimeZoneIso(serverOffsetInMilliSeconds)
   releases.forEach((release: StatkalRelease) => {
     const variant: StatkalVariant = variants.filter(
       (variant) => variant.statisticId == release.statisticId && variant.language === release.language
     )[0]
     const contactsStatistic = contacts.filter((contact) => variant.contacts.includes(contact.id.toString()))
-    const pubDate: string | undefined = formatDate(release.pubDate, "yyyy-MM-dd'T'HH:mm:ss")
+    const pubDate: string | undefined = formatPubDateStatistic(release.pubDate)
     rssReleases.push({
       guid: release.guid,
       title: variant.title,
@@ -106,7 +219,7 @@ function getRssReleases(variants: StatkalVariant[], releases: StatkalRelease[]):
       category: variant.category,
       subject: variant.subject,
       language: variant.language === 'en' ? 'en' : 'no',
-      pubDate: `${pubDate}${timeZoneIso}`,
+      pubDate: pubDate ?? '',
       periode: release.periode,
       shortname: variant.shortname,
       contacts: util.data.forceArray(contactsStatistic),
@@ -137,7 +250,7 @@ interface RssRelease {
   pubDate: string
   periode: string
   shortname: string
-  contacts: Contact[]
+  contacts: Contact[] | Array<components['schemas']['Contact']>
 }
 
 interface StatkalVariant {

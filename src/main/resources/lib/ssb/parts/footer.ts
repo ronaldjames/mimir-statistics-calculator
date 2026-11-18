@@ -1,6 +1,6 @@
 import { get, Content } from '/lib/xp/content'
-import { assetUrl } from '/lib/xp/portal'
 import { localize } from '/lib/xp/i18n'
+import { assetUrl } from '/lib/enonic/asset'
 import { createMenuTree, parseGlobalLinks } from '/lib/ssb/parts/menu'
 import { type Language } from '/lib/types/language'
 import * as util from '/lib/util'
@@ -8,7 +8,11 @@ import { type FooterContent } from '/lib/types/footer'
 import { isEnabled } from '/lib/featureToggle'
 import { type Footer } from '/site/content-types'
 
-export function getFooterContent(language: Language, baseUrl: string): FooterContent | undefined {
+export function getFooterContent(
+  language: Language,
+  baseUrl: string,
+  useAnniversary: boolean
+): FooterContent | undefined {
   if (language.footerId === undefined || language.footerId === null) {
     return undefined
   } else {
@@ -21,7 +25,11 @@ export function getFooterContent(language: Language, baseUrl: string): FooterCon
 
     return {
       logoUrl: assetUrl({
-        path: 'SSB_logo_white.svg',
+        path: useAnniversary
+          ? language.code === 'en'
+            ? 'SSB_logo_anniversary_en_white.svg'
+            : 'SSB_logo_anniversary_no_white.svg'
+          : 'SSB_logo_white.svg',
       }),
       copyrightUrl: footerContent.data.copyrightUrl,
       copyrightText: localize({

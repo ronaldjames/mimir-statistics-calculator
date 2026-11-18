@@ -1,3 +1,4 @@
+import { type Request } from '@enonic-types/core'
 import { getContent } from '/lib/xp/portal'
 import { React4xp } from '/lib/enonic/react4xp'
 
@@ -8,7 +9,7 @@ export function macro(context: XP.MacroContext) {
   try {
     return renderKeyFigureTextMacro(context)
   } catch (e) {
-    return renderError(context.request as XP.Request, 'Error in macro', e)
+    return renderError(context.request as Request, 'Error in macro', e)
   }
 }
 
@@ -16,10 +17,11 @@ function renderKeyFigureTextMacro(context: XP.MacroContext) {
   const page = getContent()
   if (!page) throw Error('No page found')
 
-  const { keyFigureData, language, sourceText } = fetchKeyFigureData(context?.params?.keyFigure)
+  const { keyFigureData, sourceText } = fetchKeyFigureData(context?.params?.keyFigure)
+
   const keyFigureText = new React4xp('site/macros/keyFigureText/keyFigureText')
     .setProps({
-      text: parseKeyFigureText(keyFigureData, context.params, language, sourceText),
+      text: parseKeyFigureText(keyFigureData, context.params, page.language, sourceText),
     })
     .uniqueId()
 

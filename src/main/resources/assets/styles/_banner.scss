@@ -1,5 +1,6 @@
 @use 'bootstrap' as *;
-@use '@statisticsnorway/ssb-component-library/src/main.scss' as *;
+@use '@statisticsnorway/ssb-component-library/src/style/_variables' as component-lib;
+@use './globalStyles' as global;
 
 .part-banner {
   min-height: 272px;
@@ -16,10 +17,12 @@
     overflow: hidden;
     height: 100%;
     width: 100%;
+
     img {
       display: block;
       height: auto;
       width: auto;
+      object-fit: cover;
     }
 
     @include media-breakpoint-down(md) {
@@ -31,7 +34,7 @@
 
   .subtitle {
     text-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
-    font-size: $header-font-size;
+    font-size: global.$header-font-size;
   }
 
   h1 {
@@ -49,7 +52,7 @@
   }
 
   &.fact-page-banner {
-    background-color: $ssb-green-3;
+    background-color: component-lib.$ssb-green-3;
   }
 
   &.landing-page-banner {
@@ -120,6 +123,7 @@
       min-height: 182px;
       padding-right: 10px;
       padding-left: 10px;
+
       h1 {
         font-size: 36px;
       }

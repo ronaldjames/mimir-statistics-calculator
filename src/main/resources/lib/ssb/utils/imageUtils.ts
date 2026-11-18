@@ -1,23 +1,26 @@
-import { get, Content } from '/lib/xp/content'
+import { get, type Content } from '/lib/xp/content'
 import { imageUrl as xpImageUrl, type ImageUrlParams, imagePlaceholder } from '/lib/xp/portal'
 
-export function getImageCaption(imageId: string): string | undefined {
+export function getImageCaption(imageId?: string): string {
+  if (!imageId) return ''
   const imageContent: Content<MediaImage> | null = get({
     key: imageId,
   })
-  return imageContent && imageContent !== undefined ? imageContent.data.caption : ''
+  return imageContent?.data?.caption ?? ''
 }
 
-export function getImageAlt(imageId: string): string | undefined {
+export function getImageAlt(imageId?: string): string {
+  if (!imageId) return ''
   const imageContent: Content<MediaImage> | null = get({
     key: imageId,
   })
-  return imageContent && imageContent !== undefined ? imageContent.data.altText : ''
+  const alt = imageContent?.data?.altText
+  if (alt) return alt
+  else return ''
 }
 
 export function imageUrl(params: ImageUrlParams) {
   if (!(params.path || params.id)) return ''
-
   const image = get<Content<MediaImage>>({ key: (params.path as string) || (params.id as string) })
   if (!image) return ''
 
@@ -47,7 +50,7 @@ export function getImageFromContent(XPContent: Content, imageDimensions: ImageDi
       scale,
       format: 'jpg',
     })
-    imageAlt = getImageAlt(image) ? getImageAlt(image) : ''
+    imageAlt = getImageAlt(image)
   }
 
   return { imageSrc, imageAlt }

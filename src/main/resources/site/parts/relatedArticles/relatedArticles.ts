@@ -1,3 +1,4 @@
+import { type Request, type Response } from '@enonic-types/core'
 import { type Content, get as getContentByKey, query } from '/lib/xp/content'
 import { getContent, type ImageUrlParams, pageUrl, processHtml } from '/lib/xp/portal'
 import { render } from '/lib/thymeleaf'
@@ -25,7 +26,7 @@ import { type Article, type Statistics } from '/site/content-types'
 
 const view = resolve('./relatedArticles.html')
 
-export function get(req: XP.Request): XP.Response {
+export function get(req: Request): Response {
   try {
     const page = getContent<Content<Article>>()
     if (!page) throw Error('No page found')
@@ -42,11 +43,11 @@ export function get(req: XP.Request): XP.Response {
   }
 }
 
-export function preview(req: XP.Request, relatedArticles: RelatedArticles['relatedArticles']) {
+export function preview(req: Request, relatedArticles: RelatedArticles['relatedArticles']) {
   return renderPart(req, relatedArticles)
 }
 
-function renderPart(req: XP.Request, relatedArticles: RelatedArticles['relatedArticles']): XP.Response {
+function renderPart(req: Request, relatedArticles: RelatedArticles['relatedArticles']): Response {
   const page = getContent<Content<Article>>()
   if (!page) throw Error('No page found')
 
@@ -118,7 +119,7 @@ function renderPart(req: XP.Request, relatedArticles: RelatedArticles['relatedAr
               scale: 'block(320, 180)', // 16:9
               format: 'jpg',
             })
-            const imageAlt: string | undefined = getImageAlt(article.externalArticle.image)
+            const imageAlt = getImageAlt(article.externalArticle.image)
             let subTitle = ''
             if (article.externalArticle.type) {
               subTitle = article.externalArticle.type

@@ -1,22 +1,25 @@
+import { type Request } from '@enonic-types/core'
+import { type components } from '@statisticsnorway/statreg-api-types'
 import { query, type Content } from '/lib/xp/content'
 import { StatisticInListing, VariantInListing } from '/lib/ssb/dashboard/statreg/types'
-import { getTimeZoneIso } from '/lib/ssb/utils/dateUtils'
 import { subDays, isAfter } from '/lib/vendor/dateFns'
-import { getAllStatisticsFromRepo } from '/lib/ssb/statreg/statistics'
+import { getServerOffsetInMs } from '/lib/ssb/utils/serverOffset'
+import { getAllStatisticsFromRepo, fetchReleasesFromStatregApi } from '/lib/ssb/statreg/statistics'
 import { getMainSubjects } from '/lib/ssb/utils/subjectUtils'
 import { getIngressWithKeyFigureText } from '/lib/ssb/utils/keyFigureTextUtils'
 import { type SubjectItem } from '/lib/types/subject'
+import { isEnabled } from '/lib/featureToggle'
 import { type Statistic } from '/site/mixins/statistic'
 import { type Article, type Statistics } from '/site/content-types'
 import { ensureArray } from '../utils/arrayUtils'
 import { findLatestRelease, formatPubDateArticle, getLinkByPath, getPubDateStatistic } from './news-helpers'
 
-const dummyReq: Partial<XP.Request> = {
+const dummyReq: Partial<Request> = {
   branch: 'master',
 }
 
 export function getNews(days: number): NewsItem[] {
-  const mainSubjects: SubjectItem[] = getMainSubjects(dummyReq as XP.Request)
+  const mainSubjects: SubjectItem[] = getMainSubjects(dummyReq as Request)
   const articles: NewsItem[] = getArticles(mainSubjects, days)
   const statistics: NewsItem[] = getStatistics(mainSubjects, days)
   return articles.concat(statistics)
@@ -25,8 +28,6 @@ export function getNews(days: number): NewsItem[] {
 function getArticles(mainSubjects: SubjectItem[], days: number): NewsItem[] {
   const from: string = subDays(new Date(), days).toISOString()
   const to: string = new Date().toISOString()
-  const serverOffsetInMilliSeconds: number = parseInt(app.config?.['serverOffsetInMs']) || 0
-  const timeZoneIso: string = getTimeZoneIso(serverOffsetInMilliSeconds)
 
   const news: Array<NewsItem> = []
   mainSubjects.forEach((mainSubject) => {
@@ -47,9 +48,7 @@ function getArticles(mainSubjects: SubjectItem[], days: number): NewsItem[] {
       },
     }).hits as unknown as Array<Content<Article>>
     articles.forEach((article) => {
-      const pubDate: string | undefined = article.publish?.from
-        ? formatPubDateArticle(article.publish.from, serverOffsetInMilliSeconds, timeZoneIso)
-        : undefined
+      const pubDate: string | undefined = article.publish?.from ? formatPubDateArticle(article.publish.from) : undefined
       if (pubDate) {
         const link = getLinkByPath(article._path)
         const preface = getIngressWithKeyFigureText(article.data.ingress)
@@ -72,18 +71,86 @@ function getArticles(mainSubjects: SubjectItem[], days: number): NewsItem[] {
 }
 
 function getStatistics(mainSubjects: SubjectItem[], days: number): NewsItem[] {
+  if (isEnabled('new-statreg-as-source', false, 'ssb')) {
+    return getReleasesFromApi(mainSubjects, days)
+  }
+
+  return getStatisticsFromRepo(mainSubjects, days)
+}
+
+function getReleasesFromApi(mainSubjects: SubjectItem[], days: number): NewsItem[] {
+  const from = subDays(new Date(), days).toISOString() // e.g. Date for 90 days ago
+  const today = new Date().toISOString()
+
+  const releases =
+    fetchReleasesFromStatregApi({
+      publish_time_after: from,
+      publish_time_before: today,
+      sort: 'publish_time',
+    }) || []
+
+  if (!releases || 'error' in releases || releases.length === 0) return []
+
+  const releaseByStatisticShortname: Record<string, components['schemas']['Release_listing']> = {}
+  releases.forEach((release) => {
+    const shortname = release.statistic?.shortname
+    if (shortname) {
+      releaseByStatisticShortname[shortname] = release
+    }
+  })
+
+  const statisticsNews: NewsItem[] = []
+
+  mainSubjects.forEach((mainSubject) => {
+    const statisticsContent = query({
+      start: 0,
+      count: 100,
+      query:
+        '_path LIKE "/content' +
+        mainSubject.path +
+        '/*" AND data.shortname IN(' +
+        releases.map(({ statistic }) => `"${statistic?.shortname}"`).join(',') +
+        ')',
+    }).hits as unknown as Array<Content<Statistics & Statistic>>
+
+    statisticsContent.forEach((statistic) => {
+      const statisticContentShortname = statistic.data.shortname
+      const release = statisticContentShortname ? releaseByStatisticShortname[statisticContentShortname] : undefined
+
+      if (!release?.publish_time) return
+
+      statisticsNews.push({
+        guid: statistic._id,
+        title: statistic.displayName,
+        link: getLinkByPath(statistic._path),
+        description: statistic.x['com-enonic-app-metafields']?.['meta-data']?.seoDescription || '',
+        category: mainSubject.title,
+        subject: mainSubject.name,
+        language: statistic.language === 'en' ? 'en' : 'no',
+        pubDate: formatPubDateArticle(release.publish_time),
+        shortname: release.statistic?.shortname || '',
+      })
+    })
+  })
+
+  return statisticsNews
+}
+
+function getStatisticsFromRepo(mainSubjects: SubjectItem[], days: number): NewsItem[] {
   const from = new Date(subDays(new Date(), days).setHours(0, 0, 0, 0))
   const statistics: Array<StatisticInListing> = getAllStatisticsFromRepo()
+  const serverOffsetInMs: number = getServerOffsetInMs()
   const statregStatistics = statistics.reduce((statsWithRelease: Array<StatisticInListing>, stat) => {
-    const { latestVariant, latestRelease } = findLatestRelease(ensureArray<VariantInListing>(stat.variants))
+    const { latestVariant, latestRelease } = findLatestRelease(
+      ensureArray<VariantInListing>(stat.variants),
+      serverOffsetInMs
+    )
     if (isAfter(latestRelease, from)) {
       stat.variants = [latestVariant]
       statsWithRelease.push(stat)
     }
     return statsWithRelease
   }, [])
-  const serverOffsetInMS: number = parseInt(app.config?.['serverOffsetInMs']) || 0
-  const timeZoneIso: string = getTimeZoneIso(serverOffsetInMS)
 
   const statisticsNews: NewsItem[] = []
   if (statregStatistics.length > 0) {
@@ -100,7 +167,7 @@ function getStatistics(mainSubjects: SubjectItem[], days: number): NewsItem[] {
           (s) => s.id.toString() === statistic.data.statistic
         )
         const variant: VariantInListing | undefined = statreg?.variants?.[0] || undefined
-        const pubDate: string | undefined = variant ? getPubDateStatistic(variant, timeZoneIso) : undefined
+        const pubDate: string | undefined = variant ? getPubDateStatistic(variant, serverOffsetInMs) : undefined
 
         const link = getLinkByPath(statistic._path)
 

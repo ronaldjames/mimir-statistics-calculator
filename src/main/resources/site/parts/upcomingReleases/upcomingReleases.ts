@@ -1,3 +1,4 @@
+import { type Request } from '@enonic-types/core'
 import { query, type Content } from '/lib/xp/content'
 import { getContent, getComponent, processHtml, serviceUrl, sanitizeHtml } from '/lib/xp/portal'
 import { localize } from '/lib/xp/i18n'
@@ -10,7 +11,8 @@ import {
 } from '/lib/types/variants'
 import { getMainSubjects, getMainSubjectById } from '/lib/ssb/utils/subjectUtils'
 import { formatDate } from '/lib/ssb/utils/dateUtils'
-import { format } from '/lib/vendor/dateFns'
+import { getServerOffsetInMs } from '/lib/ssb/utils/serverOffset'
+import { addDays, format } from '/lib/vendor/dateFns'
 import {
   addMonthNames,
   groupStatisticsByYearMonthAndDay,
@@ -20,22 +22,24 @@ import {
 import { filterReleasesIntoArrays, filterOnComingReleases } from '/lib/ssb/utils/filterReleasesUtils'
 import { type StatisticInListing } from '/lib/ssb/dashboard/statreg/types'
 import { render } from '/lib/enonic/react4xp'
+import { isEnabled } from '/lib/featureToggle'
 
-import { getAllStatisticsFromRepo } from '/lib/ssb/statreg/statistics'
+import { fetchReleasesFromStatregApi, getAllStatisticsFromRepo } from '/lib/ssb/statreg/statistics'
 import { fromPartCache } from '/lib/ssb/cache/partCache'
 import { type UpcomingReleasesProps } from '/lib/types/partTypes/upcomingReleases'
 import { type SubjectItem } from '/lib/types/subject'
 import { type UpcomingRelease } from '/site/content-types'
+import { prepareApiUpcomingReleases, type StatregApiRelease } from '/services/upcomingReleases/upcomingReleases'
 
-export function get(req: XP.Request) {
+export function get(req: Request) {
   return renderPart(req)
 }
 
-export function preview(req: XP.Request) {
+export function preview(req: Request) {
   return renderPart(req)
 }
 
-function renderPart(req: XP.Request) {
+function renderPart(req: Request) {
   const content = getContent()
   if (!content) throw Error('No page found')
 
@@ -44,8 +48,7 @@ function renderPart(req: XP.Request) {
 
   const currentLanguage: string = content.language ? content.language : 'nb'
   const count: number = parseInt(component.config.numberOfDays)
-  const serverOffsetInMs: number =
-    app.config && app.config['serverOffsetInMs'] ? parseInt(app.config['serverOffsetInMs']) : 0
+  const serverOffsetInMs: number = getServerOffsetInMs()
 
   const buttonTitle: string = localize({
     key: 'button.showAll',
@@ -56,24 +59,47 @@ function renderPart(req: XP.Request) {
   })
   const allMainSubjects: Array<SubjectItem> = getMainSubjects(req, content.language === 'en' ? 'en' : 'nb')
 
-  const groupedWithMonthNames: Array<YearReleases> = fromPartCache(req, `${content._id}-upcomingReleases`, () => {
-    // Get statistics
-    const statistics: Array<StatisticInListing> = getAllStatisticsFromRepo()
-    const allReleases: Array<Release> = getAllReleases(statistics)
+  let groupedWithMonthNames: Array<YearReleases>
+  if (isEnabled('new-statreg-as-source', false, 'ssb')) {
+    groupedWithMonthNames = fromPartCache(req, `${content._id}-upcomingReleases`, () => {
+      const from = new Date()
+      const releases =
+        fetchReleasesFromStatregApi({
+          sort: 'publish_time',
+          approval_status: 'GODKJENT',
+          publish_time_after: from.toISOString(),
+          publish_time_before: addDays(from, count).toISOString(),
+        }) || []
 
-    // All statistics from today and a number of days
-    const releasesFiltered: Array<Release> = filterOnComingReleases(allReleases, serverOffsetInMs, count)
+      const releasesPrepped: Array<PreparedStatistics> = releases
+        .map((release: StatregApiRelease) => prepareApiUpcomingReleases(release, currentLanguage))
+        .filter((release: PreparedStatistics | null): release is PreparedStatistics => release !== null)
 
-    // Choose the right variant and prepare the date in a way it works with the groupBy function
-    const releasesPrepped: Array<PreparedStatistics | null> =
-      releasesFiltered.map((release: Release) => prepareRelease(release, currentLanguage)) ?? []
+      const groupedByYearMonthAndDay: GroupedBy<GroupedBy<GroupedBy<PreparedStatistics>>> =
+        groupStatisticsByYearMonthAndDay(releasesPrepped as Array<PreparedStatistics>)
 
-    // group by year, then month, then day
-    const groupedByYearMonthAndDay: GroupedBy<GroupedBy<GroupedBy<PreparedStatistics>>> =
-      groupStatisticsByYearMonthAndDay(releasesPrepped as Array<PreparedStatistics>)
+      return addMonthNames(groupedByYearMonthAndDay, currentLanguage)
+    })
+  } else {
+    groupedWithMonthNames = fromPartCache(req, `${content._id}-upcomingReleases`, () => {
+      // Get statistics
+      const statistics: Array<StatisticInListing> = getAllStatisticsFromRepo()
+      const allReleases: Array<Release> = getAllReleases(statistics)
 
-    return addMonthNames(groupedByYearMonthAndDay, currentLanguage)
-  })
+      // All statistics from today and a number of days
+      const releasesFiltered: Array<Release> = filterOnComingReleases(allReleases, serverOffsetInMs, count)
+
+      // Choose the right variant and prepare the date in a way it works with the groupBy function
+      const releasesPrepped: Array<PreparedStatistics | null> =
+        releasesFiltered.map((release: Release) => prepareRelease(release, currentLanguage)) ?? []
+
+      // group by year, then month, then day
+      const groupedByYearMonthAndDay: GroupedBy<GroupedBy<GroupedBy<PreparedStatistics>>> =
+        groupStatisticsByYearMonthAndDay(releasesPrepped as Array<PreparedStatistics>)
+
+      return addMonthNames(groupedByYearMonthAndDay, currentLanguage)
+    })
+  }
 
   const contentReleases: Array<PreparedContentRelease> = query<Content<UpcomingRelease>>({
     start: 0,

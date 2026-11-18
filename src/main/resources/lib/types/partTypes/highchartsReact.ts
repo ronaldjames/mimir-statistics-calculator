@@ -1,20 +1,29 @@
-import { type HighchartsGraphConfig } from '/lib/types/highcharts'
+import { Options as HighchartsGraphConfig } from 'highcharts'
+import { type Phrases } from '/lib/types/language'
 import { type Highchart } from '/site/content-types/highchart'
 
 export interface HighchartsReactProps {
+  highcharts: HighchartsPartProps[]
+  language: string
+  phrases?: Phrases
+}
+
+export interface HighchartsPartProps {
   config?: HighchartsExtendedProps
   description?: string
   type?: string
   contentKey?: string
+  timePeriod?: string
   footnoteText?: string[]
   creditsEnabled?: boolean
   sourceList?: Highchart['sourceList']
-  hideTitle?: boolean
+  defaultShowAsTable?: boolean
 }
 
-export interface HighchartsReactExtraProps {
+export interface HighchartsExtraPartProps {
   draft?: boolean
   noDraftAvailable?: boolean
+  timePeriod?: string
 }
 
-export type HighchartsExtendedProps = HighchartsGraphConfig & HighchartsReactExtraProps
+export type HighchartsExtendedProps = HighchartsGraphConfig & HighchartsExtraPartProps

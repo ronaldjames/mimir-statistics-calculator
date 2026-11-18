@@ -1,19 +1,22 @@
 @use 'bootstrap' as *;
-@use '@statisticsnorway/ssb-component-library/src/main.scss' as *;
+@use '@statisticsnorway/ssb-component-library/src/style/_variables' as component-lib;
 
 .highchart-wrapper {
   .highcharts-credits {
     display: none;
   }
+
   .highcharts-figure {
     margin: 0;
   }
+
   @include media-breakpoint-down(sm) {
     .col-12 {
       padding-left: 0;
       padding-right: 0;
     }
   }
+
   .ssb-tabs {
     padding-left: $spacer * 1.5;
     margin-top: 40px;
@@ -38,7 +41,7 @@
       }
 
       &:focus {
-        outline: $ssb-purple-3 solid 2px;
+        outline: component-lib.$ssb-purple-3 solid 2px;
         outline-offset: 1px;
       }
     }
@@ -50,40 +53,20 @@
   }
 }
 
-.btn-highchart-export {
-  z-index: 200;
-  bottom: 60px;
-  right: 10px;
-  background-color: transparent;
-  font-size: 14px;
-
-  @include media-breakpoint-down(sm) {
-    bottom: 55px;
-  }
-
-  i {
-    color: $ssb-green-4;
-    pointer-events: none;
-  }
-  span {
-    pointer-events: none;
-  }
-}
-.hc-container {
+.highchart-wrapper {
   .footnote {
     font-size: 12px;
     padding-left: 16px;
   }
+
   @include media-breakpoint-down(sm) {
     .footnote {
-      position: absolute;
-      bottom: -30px;
       font-size: 10px;
       line-height: 14px;
-      z-index: 3;
     }
   }
 }
+
 .highcharts-canvas {
   min-height: 500px;
   height: auto;
@@ -95,22 +78,26 @@
     height: auto;
     width: 100%;
 
-    .highcharts-container, .highcharts-root, .highcharts-background {
+    .highcharts-container,
+    .highcharts-root,
+    .highcharts-background {
       min-height: 300px !important;
     }
   }
 }
+
 .highcharts-figure.hide-title {
-  .highcharts-title, .highcharts-subtitle {
+
+  .highcharts-title,
+  .highcharts-subtitle {
     display: none !important;
   }
 }
 
 .highcharts-figure {
-
   .figure-title {
     font-size: 20px;
-    @include roboto;
+    @include component-lib.roboto;
     font-weight: bold;
     margin-bottom: 10px;
   }
@@ -118,30 +105,34 @@
   .figure-subtitle {
     font-size: 14px;
   }
+
+  .figure-time-period {
+    font-size: 14px;
+  }
 }
 
- .highcharts-data-table {
-    overflow-x: auto;
-    margin-top: 50px;
+.highcharts-data-table {
+  overflow-x: auto;
+  margin-top: 50px;
 
-   thead th:first-child {
-     text-align: left;
-   }
+  thead th:first-child {
+    text-align: left;
+  }
 
-   caption {
-     display: none;
-   }
+  caption {
+    display: none;
+  }
 }
 
 .hide-div {
-  display: none!important;
+  display: none !important;
 }
 
 .show-div {
-  display: block!important;
+  display: block !important;
 }
 
 // Highcharts Keyboard navigation tab fix (accessibility elements fix)
-.highcharts-a11y-proxy-button.highcharts-no-tooltip{
-  top:0!important;
+.highcharts-a11y-proxy-button.highcharts-no-tooltip {
+  top: 0 !important;
 }

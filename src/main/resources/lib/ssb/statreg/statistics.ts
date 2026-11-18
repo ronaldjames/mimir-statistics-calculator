@@ -1,4 +1,6 @@
 import '/lib/ssb/polyfills/nashorn'
+import { type paths } from '@statisticsnorway/statreg-api-types'
+import { isEnabled } from '/lib/featureToggle'
 import { StatRegNode } from '/lib/ssb/repo/statreg'
 import {
   StatisticInListing,
@@ -6,9 +8,10 @@ import {
   ReleasesInListing,
   ReleaseDatesVariant,
 } from '/lib/ssb/dashboard/statreg/types'
-import { HttpResponse } from '/lib/http-client'
+import { HttpResponse, request } from '/lib/http-client'
 import { format, isAfter, isSameDay } from '/lib/vendor/dateFns'
 import { isDateBetween } from '/lib/ssb/utils/dateUtils'
+import { getServerOffsetInMs } from '/lib/ssb/utils/serverOffset'
 
 import { ensureArray } from '/lib/ssb/utils/arrayUtils'
 import { fetchStatRegData } from '/lib/ssb/dashboard/statreg/common'
@@ -18,6 +21,11 @@ import { Events, logUserDataQuery } from '/lib/ssb/repo/query'
 import { cronJobLog } from '/lib/ssb/utils/serverLog'
 
 export const STATREG_REPO_STATISTICS_KEY = 'statistics'
+
+const useNewStatreg = isEnabled('new-statreg-as-source', false, 'ssb')
+
+// TODO: Remove this when new Statreg as data source is implemented
+useNewStatreg ?? log.info('We are using the new Statreg!')
 
 export function fetchStatistics(): Array<StatisticInListing> | null {
   try {
@@ -38,18 +46,95 @@ export function fetchStatistics(): Array<StatisticInListing> | null {
       function: 'fetchStatistics',
       message: Events.REQUEST_COULD_NOT_CONNECT,
       info: message,
-      status: error,
+      status: error as string,
     })
   }
   return null
 }
 
+const STATREG_API_BASE_URL =
+  app.config?.['ssb.statregapi.serverside.baseUrl'] || 'https://i.qa.ssb.no/statistikkregisteret/api'
+
+type ReleasesQuery = NonNullable<paths['/releases']['get']['parameters']['query']>
+export type ReleaseListingResponse = paths['/releases']['get']['responses']['200']['content']['application/json']
+export type ReleasesResponse = paths['/releases']['get']['responses'][200]['content']['application/json']
+export function fetchReleasesFromStatregApi({
+  start = 0,
+  count = 1000,
+  sort,
+  shortname,
+  approval_status = 'GODKJENT',
+  publish_time_after,
+  publish_time_before,
+}: ReleasesQuery): ReleasesResponse['releases'] | { error: unknown } {
+  try {
+    const response = request({
+      url:
+        STATREG_API_BASE_URL +
+        `/releases?start=${start}&count=${count}` +
+        (sort ? `&sort=${sort}` : '') +
+        (shortname ? `&shortname=${shortname}` : '') +
+        (approval_status ? `&approval_status=${approval_status}` : '') +
+        (publish_time_after ? `&publish_time_after=${publish_time_after}` : '') +
+        (publish_time_before ? `&publish_time_before=${publish_time_before}` : ''),
+    })
+    const body: ReleasesResponse = response.body ? JSON.parse(response.body) : {}
+
+    return body.releases
+  } catch (error) {
+    log.error(`Failed to fetch releases from statreg API: ${error}`)
+    return { error }
+  }
+}
+
+export type StatisticListingResponse = paths['/statistics']['get']['responses']['200']['content']['application/json']
+export type StatisticListingQueryParams = paths['/statistics']['get']['parameters']['query']
+export function fetchStatisticsFromStatregAPI({
+  start = 0,
+  count = 1000,
+}): StatisticListingResponse['statistics'] | { error: unknown } {
+  try {
+    const response = request({
+      url: STATREG_API_BASE_URL + `/statistics?start=${start}&count=${count}`,
+    })
+
+    const body: StatisticListingResponse | undefined = response.body ? JSON.parse(response.body) : undefined
+
+    return body?.statistics
+  } catch (error) {
+    log.error(`Failed to fetch statistics from statreg API: ${error}`)
+    return {
+      error,
+    }
+  }
+}
+
+export type StatisticDetailsResponse =
+  paths['/statistics/{shortname}']['get']['responses']['200']['content']['application/json']
+export function fetchStatisticByShortnameFromStatregAPI(
+  shortname: string
+): StatisticDetailsResponse | { error: unknown } {
+  try {
+    const response = request({
+      url: STATREG_API_BASE_URL + `/statistics/${shortname}`,
+    })
+
+    const body: StatisticDetailsResponse = response.body ? JSON.parse(response.body) : undefined
+    return body
+  } catch (error) {
+    log.error(`Failed to fetch statistic from statreg API: ${error}`)
+    return {
+      error,
+    }
+  }
+}
+
 export function createMimirMockReleaseStatreg(): StatisticInListing {
   // use todays date for next release if its before 0800 in the morning
-  const serverOffsetInMs: number = app.config?.['serverOffsetInMs'] ? parseInt(app.config['serverOffsetInMs']) : 0
+  const serverOffsetInMs: number = getServerOffsetInMs()
   const midnight: number = new Date().setHours(0, 0, 0, 0)
   const eight: number = new Date().setHours(8, 0, 0, 0)
-  const withServerOffset = new Date(new Date().getTime() + serverOffsetInMs).getTime()
+  const withServerOffset = new Date(Date.now() + serverOffsetInMs).getTime()
   const isBeforeEight: boolean = withServerOffset >= midnight && withServerOffset <= eight
   const previousRelease = isBeforeEight ? new Date(eight).getTime() - 86400000 : eight
   const nextRelease = isBeforeEight ? eight : new Date(eight).getTime() + 86400000
@@ -174,18 +259,12 @@ export function getReleaseDatesByVariants(variants: Array<VariantInListing>): Re
   const nextReleasesSorted: Array<string> = nextReleases.sort(
     (a: string, b: string) => new Date(a).getTime() - new Date(b).getTime()
   )
-  const serverOffsetInMs: number = app.config?.['serverOffsetInMs'] ? parseInt(app.config['serverOffsetInMs']) : 0
-  const serverTime: Date = new Date(new Date().getTime() + serverOffsetInMs)
+  const serverOffsetInMs: number = getServerOffsetInMs()
+  const serverTime: Date = new Date(Date.now() + serverOffsetInMs)
   const nextReleaseFiltered: Array<string> = nextReleasesSorted.filter((release) =>
     isAfter(new Date(release), serverTime)
   )
   const nextReleaseIndex: number = nextReleasesSorted.indexOf(nextReleaseFiltered[0])
-
-  // TODO: Can be removed after publication statistics data is tested thoroughly
-  if (nextReleaseFiltered?.length)
-    cronJobLog(
-      `Filtered next releases by date (later than today) for variant ${variants[nextReleaseIndex]?.id}: ${JSON.stringify(nextReleaseFiltered)}`
-    )
 
   // If Statregdata is old, get date before nextRelease as previous date
   if (nextReleaseFiltered.length > 0 && nextReleaseIndex > 0) {

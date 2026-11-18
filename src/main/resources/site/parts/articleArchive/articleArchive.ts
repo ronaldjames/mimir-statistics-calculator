@@ -1,3 +1,4 @@
+import { type Request, type Response } from '@enonic-types/core'
 import { query, type Content } from '/lib/xp/content'
 import { getContent, pageUrl, processHtml, serviceUrl } from '/lib/xp/portal'
 import { localize } from '/lib/xp/i18n'
@@ -14,7 +15,7 @@ import {
 import { getSubtitleForContent } from '/lib/ssb/utils/utils'
 import { type Article, type ArticleArchive } from '/site/content-types'
 
-export function get(req: XP.Request): XP.Response {
+export function get(req: Request): Response {
   try {
     return renderPart(req)
   } catch (e) {
@@ -22,11 +23,11 @@ export function get(req: XP.Request): XP.Response {
   }
 }
 
-export function preview(req: XP.Request) {
+export function preview(req: Request) {
   return renderPart(req)
 }
 
-function renderPart(req: XP.Request) {
+function renderPart(req: Request) {
   const page = getContent<Content<ArticleArchive>>()
   if (!page) throw Error('No page found')
 
@@ -49,7 +50,7 @@ function renderPart(req: XP.Request) {
       })
     : undefined
 
-  const imageAltText: string | undefined = page.data.image ? getImageAlt(page.data.image) : ' '
+  const imageAltText = getImageAlt(page.data.image)
 
   const freeText: string | undefined = page.data.freeText
     ? processHtml({

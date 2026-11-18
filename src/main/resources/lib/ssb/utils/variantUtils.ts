@@ -5,8 +5,9 @@ import { ReleasesInListing, StatisticInListing, VariantInListing } from '/lib/ss
 import { groupBy } from '/lib/vendor/ramda'
 
 import { getMainSubject, getMainSubjectStatistic } from '/lib/ssb/utils/parentUtils'
-import { sameDay, createMonthName, formatDate, isSameOrBefore } from '/lib/ssb/utils/dateUtils'
-import { parseISO, getMonth, getYear, getDate, getISOWeek } from '/lib/vendor/dateFns'
+import { createMonthName, formatDate, isSameOrBefore } from '/lib/ssb/utils/dateUtils'
+import { parseISO, getMonth, getYear, getDate, getISOWeek, getISOWeekYear } from '/lib/vendor/dateFns'
+import { getServerOffsetInMs } from '/lib/ssb/utils/serverOffset'
 import * as util from '/lib/util'
 import {
   type DayReleases,
@@ -191,7 +192,7 @@ function calculateWeek(previousFrom: string, language: string): string {
   return localize({
     key: 'period.week',
     locale: language,
-    values: [getISOWeek(date).toString(), date.getFullYear().toString()],
+    values: [getISOWeek(date).toString(), getISOWeekYear(date).toString()],
   })
 }
 
@@ -263,45 +264,13 @@ export function groupStatisticsByYearMonthAndDay(
   return groupedByYearMonthAndDay
 }
 
-export function getReleasesForDay(
-  statisticList: Array<StatisticInListing>,
-  day: Date,
-  property: keyof VariantInListing = 'previousRelease'
-): Array<StatisticInListing> {
-  return statisticList.reduce((acc: Array<StatisticInListing>, stat: StatisticInListing) => {
-    const thisDayReleasedVariants: Array<VariantInListing> | undefined = Array.isArray(stat.variants)
-      ? stat.variants.filter((variant: VariantInListing) => {
-          return checkVariantReleaseDate(variant, day, property)
-        })
-      : stat.variants && checkVariantReleaseDate(stat.variants, day, property)
-        ? [stat.variants]
-        : undefined
-    if (thisDayReleasedVariants && thisDayReleasedVariants.length > 0) {
-      acc.push({
-        ...stat,
-        variants: thisDayReleasedVariants,
-      })
-    }
-    return acc
-  }, [])
-}
-
-export function checkVariantReleaseDate(
-  variant: VariantInListing,
-  day: Date,
-  property: keyof VariantInListing
-): boolean {
-  const dayFromVariant: string = variant[property] as string
-  if (property === 'previousRelease' && nextReleasedPassed(variant)) {
-    return sameDay(new Date(dayFromVariant), day) || sameDay(new Date(variant.nextRelease), day)
-  } else {
-    return sameDay(new Date(dayFromVariant), day)
-  }
-}
-
-export function prepareRelease(release: Release, language: string): PreparedStatistics | null {
+export function prepareRelease(
+  release: Release,
+  language: string,
+  variantPeriodOverride?: string
+): PreparedStatistics | null {
   if (release) {
-    const preparedVariant: PreparedVariant = formatRelease(release, language)
+    const preparedVariant: PreparedVariant = formatRelease(release, language, variantPeriodOverride)
 
     const statisticsPagesXP = query<Content<Statistics>>({
       count: 1,
@@ -422,10 +391,11 @@ function concatReleaseTimes(
 }
 
 // If import from statreg failed use nextRelease instead of previousRelease
-export function nextReleasedPassed(variant: VariantInListing): boolean {
-  const serverOffsetInMs: number =
-    app.config && app.config['serverOffsetInMs'] ? parseInt(app.config['serverOffsetInMs']) : 0
-  const serverTime: Date = new Date(new Date().getTime() + serverOffsetInMs)
+export function nextReleasedPassed(
+  variant: VariantInListing,
+  serverOffsetInMs: number = getServerOffsetInMs()
+): boolean {
+  const serverTime: Date = new Date(Date.now() + serverOffsetInMs)
   const nextRelease: Date = new Date(variant.nextRelease)
   return isSameOrBefore(new Date(nextRelease), serverTime)
 }
@@ -471,7 +441,7 @@ function formatVariant(variant: VariantInListing, language: string, property: ke
   }
 }
 
-function formatRelease(release: Release, language: string): PreparedVariant {
+function formatRelease(release: Release, language: string, periodOverride?: string): PreparedVariant {
   const date: Date = parseISO(release.publishTime)
   return {
     id: release.variantId,
@@ -479,7 +449,7 @@ function formatRelease(release: Release, language: string): PreparedVariant {
     monthNumber: getMonth(date),
     year: getYear(date),
     frequency: release.frequency,
-    period: calculatePeriodRelease(release, language),
+    period: periodOverride ?? calculatePeriodRelease(release, language),
   }
 }
 

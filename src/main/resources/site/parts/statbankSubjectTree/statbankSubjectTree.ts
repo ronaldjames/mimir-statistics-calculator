@@ -1,3 +1,4 @@
+import { type Request } from '@enonic-types/core'
 import { type Content } from '/lib/xp/content'
 import { getContent } from '/lib/xp/portal'
 import { render } from '/lib/enonic/react4xp'
@@ -22,7 +23,7 @@ import {
 } from '/lib/types/partTypes/statbankSubjectTree'
 import { type StatisticItem, type SubjectItem } from '/lib/types/subject'
 
-export function get(req: XP.Request) {
+export function get(req: Request) {
   const content = getContent()
   if (!content) throw Error('No page found')
 
@@ -35,7 +36,7 @@ export function get(req: XP.Request) {
   }
 }
 
-function getStatbankSubjectTree(req: XP.Request, content: Content) {
+function getStatbankSubjectTree(req: Request, content: Content) {
   const lang: string = content.language === 'en' ? 'en' : 'no'
   const allMainSubjects: Array<SubjectItem> = getMainSubjects(req, lang)
   const allSubSubjects: Array<SubjectItem> = getSubSubjects(req, lang)
@@ -53,7 +54,7 @@ function getStatbankSubjectTree(req: XP.Request, content: Content) {
   })
   const baseUrl: string = app.config && app.config['ssb.baseUrl'] ? app.config['ssb.baseUrl'] : 'https://www.ssb.no'
   const statbankBaseUrl: string =
-    content.language && content.language === 'en' ? baseUrl + '/en/statbank/list/' : baseUrl + '/statbank/list/'
+    content.language && content.language === 'en' ? baseUrl + '/en/statbank1/list/' : baseUrl + '/statbank1/list/'
   const props: StatbankSubjectTreeProps = {
     statbankBaseUrl,
     mainSubjects,
